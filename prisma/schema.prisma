@@ -1,0 +1,179 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // SQLite for local dev. For production, switch provider to "postgresql"
+  // and point DATABASE_URL at Supabase/Neon — the schema is compatible.
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         String   @default("USER") // USER | ADMIN
+  points       Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  places           Place[]
+  priceItems       PriceItem[]
+  reviews          Review[]
+  templates        Template[]
+  templateVotes    TemplateVote[]
+  templateComments TemplateComment[]
+  meetups          Meetup[]
+  meetupJoins      MeetupJoin[]
+  activityMedia    ActivityMedia[]
+}
+
+/// A photo/video a user posted of themselves doing an activity at a place.
+model ActivityMedia {
+  id        String   @id @default(cuid())
+  placeId   String
+  place     Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  url       String // path under /uploads
+  kind      String   @default("IMAGE") // IMAGE | VIDEO
+  caption   String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([placeId, createdAt])
+}
+
+model Place {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  category    String // RESTAURANT | CAFE | BAR_PUB | KARAOKE | SHOP | CINEMA | ENTERTAINMENT | BEAUTY_SPA | SPORT | CULTURE | OTHER
+  district    String // e.g. Sukhbaatar, Chingeltei, Bayanzurkh, Khan-Uul, Bayangol, Songino Khairkhan
+  address     String
+  description String   @default("")
+  imageUrl    String   @default("")
+  lat         Float? // WGS84; null until someone pins the place on the map
+  lng         Float?
+  priceMin    Int // estimated per-person spend, MNT
+  priceMax    Int
+  status      String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+
+  priceItems    PriceItem[]
+  reviews       Review[]
+  templateItems TemplateItem[]
+  meetups       Meetup[]
+  activityMedia ActivityMedia[]
+
+  @@index([category, status])
+}
+
+model PriceItem {
+  id            String   @id @default(cuid())
+  placeId       String
+  place         Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  name          String // e.g. "Khuushuur (2pc)", "1hr room (weekday)"
+  price         Int // MNT
+  note          String   @default("")
+  photoUrl      String   @default("") // optional photo of the menu/item
+  status        String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  submittedById String
+  submittedBy   User     @relation(fields: [submittedById], references: [id])
+  createdAt     DateTime @default(now())
+
+  @@index([placeId, status])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  placeId   String
+  place     Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  rating    Int // 1..5
+  comment   String   @default("")
+  createdAt DateTime @default(now())
+
+  @@unique([placeId, userId])
+}
+
+model Template {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @default("")
+  isPublic    Boolean  @default(false)
+  authorId    String
+  author      User     @relation(fields: [authorId], references: [id])
+  createdAt   DateTime @default(now())
+
+  items    TemplateItem[]
+  votes    TemplateVote[]
+  comments TemplateComment[]
+}
+
+model TemplateItem {
+  id         String  @id @default(cuid())
+  templateId String
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  order      Int
+  activity   String // free text, e.g. "Dinner", "Karaoke"
+  placeId    String?
+  place      Place?  @relation(fields: [placeId], references: [id], onDelete: SetNull)
+  startTime  String // "HH:MM"
+  endTime    String // "HH:MM"
+  priceMin   Int // MNT per person
+  priceMax   Int
+}
+
+model TemplateVote {
+  templateId String
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  value      Int // +1 | -1
+
+  @@id([templateId, userId])
+}
+
+model TemplateComment {
+  id         String   @id @default(cuid())
+  templateId String
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  body       String
+  createdAt  DateTime @default(now())
+}
+
+model Meetup {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @default("")
+  placeId     String?
+  place       Place?   @relation(fields: [placeId], references: [id], onDelete: SetNull)
+  location    String // free-text fallback when no place is linked
+  dateTime    DateTime
+  capacity    Int // max participants incl. host
+  status      String   @default("OPEN") // OPEN | FULL | CLOSED
+  hostId      String
+  host        User     @relation(fields: [hostId], references: [id])
+  createdAt   DateTime @default(now())
+
+  joins MeetupJoin[]
+}
+
+model MeetupJoin {
+  id        String   @id @default(cuid())
+  meetupId  String
+  meetup    Meetup   @relation(fields: [meetupId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  message   String   @default("")
+  status    String   @default("PENDING") // PENDING | ACCEPTED | DECLINED
+  createdAt DateTime @default(now())
+
+  @@unique([meetupId, userId])
+}
