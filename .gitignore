@@ -55,3 +55,4 @@ prisma/dev.db-journal
 
 # keep the example env committed as setup documentation
 !.env.example
+.neon
