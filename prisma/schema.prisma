@@ -3,9 +3,11 @@ generator client {
 }
 
 datasource db {
-  // SQLite for local dev. For production, switch provider to "postgresql"
-  // and point DATABASE_URL at Supabase/Neon — the schema is compatible.
-  provider = "sqlite"
+  // Postgres (Neon, Supabase, RDS...). Serverless hosts have no persistent
+  // filesystem, so SQLite cannot be used there. If your provider gives you a
+  // pooled and a direct URL, put the pooled one in DATABASE_URL for the app
+  // and use the direct one when running `prisma db push` / `db seed`.
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

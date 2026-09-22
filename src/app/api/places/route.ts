@@ -15,7 +15,7 @@ export async function GET(req: Request) {
         status: "APPROVED",
         ...(category ? { category } : {}),
         ...(district ? { district } : {}),
-        ...(q ? { name: { contains: q } } : {}),
+        ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
       },
       include: { reviews: { select: { rating: true } } },
       orderBy: { name: "asc" },

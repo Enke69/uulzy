@@ -12,11 +12,23 @@ A city guide and social planning platform for Ulaanbaatar, built around these pi
 
 ## Quick start
 
+Uulzy needs a Postgres database. Free options: [Neon](https://neon.tech) or
+[Supabase](https://supabase.com). Create one, then:
+
 ```bash
 npm install
-npx prisma db push     # creates prisma/dev.db from the schema
+cp .env.example .env   # paste your Postgres URL into DATABASE_URL
+npx prisma db push     # creates the tables
 npm run db:seed        # ~25 real UB places, demo users, plans, meetups
 npm run dev            # http://localhost:3000
+```
+
+If your provider gives both a **pooled** and a **direct** connection string, put
+the pooled one in `.env` and run the schema commands against the direct one:
+
+```bash
+DATABASE_URL="<direct url>" npx prisma db push
+DATABASE_URL="<direct url>" npm run db:seed
 ```
 
 ### Demo accounts
@@ -43,7 +55,7 @@ Log in as the admin to see `/admin`, the approval queue for suggested places and
 ## Architecture
 
 - **Next.js 16 (App Router) + TypeScript** — pages are server components reading via Prisma directly; mutations go through `/api/*` route handlers.
-- **Prisma + SQLite** for local dev. For production, change the `datasource` provider in `prisma/schema.prisma` to `postgresql` and point `DATABASE_URL` at Supabase/Neon — the schema is compatible.
+- **Prisma + Postgres** everywhere, local included. Serverless hosts have no persistent filesystem, so SQLite is not an option there; using the same engine locally keeps behaviour identical. Name search uses `mode: "insensitive"`, which is Postgres-only.
 - **Auth** — HMAC-signed session cookie (`src/lib/token.ts`), bcrypt password hashes, `requireUser()` / `requireAdmin()` guards in `src/lib/auth.ts`.
 - **Validation** — zod schemas in `src/lib/validate.ts`; `handleErrors` in `src/lib/api.ts` turns zod and auth errors into clean JSON responses.
 - **Pure logic** — price/time math, vote scoring, slug generation, distance math, and upload validation live in `src/lib/utils.ts` and `src/lib/upload.ts`, and are unit-tested.
@@ -79,6 +91,27 @@ Facts are moderated, opinions are not. Suggested **places** and submitted **pric
 | `src/app/admin/page.tsx` | Approval queue |
 | `docs/superpowers/specs/2026-09-17-uulzy-design.md` | Design spec, prior art, roadmap |
 
+## Deploying
+
+1. **Create a Postgres database** (Neon or Supabase) and note the connection string.
+2. **Set environment variables** on your host:
+   - `DATABASE_URL` — the pooled Postgres URL.
+   - `SESSION_SECRET` — a long random value. Generate with
+     `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`.
+     Without it, auth falls back to a hardcoded dev value that anyone reading
+     this public repo could use to forge sessions.
+3. **Create the tables once**, from your machine, against the direct URL:
+   `DATABASE_URL="<direct url>" npx prisma db push`
+   (optionally `npm run db:seed` for the demo content).
+4. **Deploy.** `prisma generate` runs automatically via the `postinstall` script —
+   hosts block dependency install scripts, so this is what keeps Prisma Client
+   present at build time.
+
+Still required before the deployment is genuinely usable: **uploads must move to
+object storage**. They currently write to `public/uploads` on local disk, which a
+serverless host discards on every redeploy. See *Media uploads* above — it is a
+single swap in `src/app/api/uploads/route.ts`.
+
 ## Before launching publicly
 
 - Set a strong `SESSION_SECRET` in `.env` (and never commit the real one).
@@ -87,3 +120,4 @@ Facts are moderated, opinions are not. Suggested **places** and submitted **pric
 - Replace the seeded price estimates **and coordinates** with verified data; both are approximations for demo purposes.
 - **Moderate activity media.** Photos and videos publish immediately today (the uploader or an admin can delete). User-submitted media is an abuse vector, so add reporting and a review queue before opening signups.
 - Move uploads to object storage and replace the OSRM demo server, as described above. Local disk does not survive a redeploy on most hosts.
+- Rotate or remove the demo accounts below — their passwords are public in this repo.
