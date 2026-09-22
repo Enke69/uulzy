@@ -1,17 +1,22 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { requireUser } from "@/lib/auth";
 import { checkUpload, uploadFilename } from "@/lib/upload";
+import { putObject, storageConfigured } from "@/lib/storage";
 import { ok, fail, handleErrors } from "@/lib/api";
 
 /**
- * Stores an upload on local disk under public/uploads and returns its URL.
- * For production, swap the write below for object storage (Supabase Storage,
- * UploadThing, S3) — callers only depend on the returned `url`.
+ * Stores an upload in Neon Object Storage and returns its public URL.
+ * Serverless hosts have no persistent disk, so nothing is written locally.
  */
 export async function POST(req: Request) {
   try {
     await requireUser();
+    if (!storageConfigured()) {
+      return fail(
+        "File storage is not configured on this server (missing AWS_* env vars).",
+        503
+      );
+    }
+
     const form = await req.formData();
     const file = form.get("file");
     if (!(file instanceof File)) return fail("No file uploaded.", 400);
@@ -19,13 +24,12 @@ export async function POST(req: Request) {
     const check = checkUpload(file.type, file.size);
     if (!check.ok) return fail(check.error, 400);
 
-    const dir = path.join(process.cwd(), "public", "uploads");
-    await mkdir(dir, { recursive: true });
-    const name = uploadFilename(check.ext);
+    // Key prefix keeps the bucket browsable; the filename itself is random.
+    const key = `${check.kind === "VIDEO" ? "video" : "image"}/${uploadFilename(check.ext)}`;
     const bytes = Buffer.from(await file.arrayBuffer());
-    await writeFile(path.join(dir, name), bytes);
+    const url = await putObject(key, bytes, file.type);
 
-    return ok({ url: `/uploads/${name}`, kind: check.kind }, 201);
+    return ok({ url, kind: check.kind }, 201);
   } catch (err) {
     return handleErrors(err);
   }

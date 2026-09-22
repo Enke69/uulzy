@@ -5,6 +5,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { randomBytes } from "node:crypto";
 import { slugify } from "../src/lib/utils";
 
 const db = new PrismaClient();
@@ -346,8 +347,19 @@ async function main() {
   await db.user.deleteMany();
 
   console.log("Creating users...");
-  const adminHash = await bcrypt.hash("Admin123!", 10);
-  const demoHash = await bcrypt.hash("demo1234", 10);
+  // Passwords are never hardcoded: this repo is public and the database is
+  // live, so a committed password is an open admin account. Supply them via
+  // env vars, or let the seed mint random ones and print them once at the end.
+  const adminPassword =
+    process.env.SEED_ADMIN_PASSWORD ?? randomBytes(12).toString("base64url");
+  const demoPassword =
+    process.env.SEED_DEMO_PASSWORD ?? randomBytes(9).toString("base64url");
+  const generated = {
+    admin: !process.env.SEED_ADMIN_PASSWORD,
+    demo: !process.env.SEED_DEMO_PASSWORD,
+  };
+  const adminHash = await bcrypt.hash(adminPassword, 10);
+  const demoHash = await bcrypt.hash(demoPassword, 10);
   const admin = await db.user.create({
     data: { email: "admin@uulzy.mn", name: "Uulzy Admin", passwordHash: adminHash, role: "ADMIN" },
   });
@@ -535,6 +547,18 @@ async function main() {
   });
 
   console.log("Seed complete.");
+  if (generated.admin || generated.demo) {
+    console.log("");
+    console.log("  Generated credentials — save these now, they are not stored:");
+    if (generated.admin) {
+      console.log(`    admin@uulzy.mn   ${adminPassword}`);
+    }
+    if (generated.demo) {
+      console.log(`    demo users       ${demoPassword}`);
+    }
+    console.log("  Set SEED_ADMIN_PASSWORD / SEED_DEMO_PASSWORD to choose your own.");
+    console.log("");
+  }
 }
 
 main()

@@ -50,8 +50,6 @@ prisma/dev.db-journal
 # playwright mcp artifacts
 .playwright-mcp/
 
-# user uploads (local disk storage)
-/public/uploads/
 
 # keep the example env committed as setup documentation
 !.env.example

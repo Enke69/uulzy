@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CATEGORIES, DISTRICTS, parseHM } from "@/lib/utils";
+import { publicBaseUrl } from "@/lib/storage";
 
 const categoryValues = CATEGORIES.map((c) => c.value) as [string, ...string[]];
 const districtValues = [...DISTRICTS] as [string, ...string[]];
@@ -38,10 +39,30 @@ export const placeSchema = z
   })
   .refine(checkRange, { message: "priceMax must be >= priceMin" });
 
-/** Paths we hand out from /api/uploads — never an arbitrary external URL. */
-const uploadPath = z
-  .string()
-  .regex(/^\/uploads\/[A-Za-z0-9._-]+$/, "Invalid upload path");
+/**
+ * Only URLs we ourselves handed out from /api/uploads are accepted — never an
+ * arbitrary external URL. The value must sit under our own bucket's public
+ * base, and the key after it must be a plain path with no traversal.
+ */
+const uploadPath = z.string().superRefine((value, ctx) => {
+  const base = publicBaseUrl();
+  const prefix = `${base}/`;
+  const invalid = (message: string) =>
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+
+  if (!base || base.startsWith("/")) {
+    invalid("File storage is not configured on this server.");
+    return;
+  }
+  if (!value.startsWith(prefix)) {
+    invalid("Invalid upload URL");
+    return;
+  }
+  const key = value.slice(prefix.length);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._\-]*(?:\/[A-Za-z0-9][A-Za-z0-9._\-]*)*$/.test(key)) {
+    invalid("Invalid upload URL");
+  }
+});
 
 export const priceItemSchema = z.object({
   name: z.string().trim().min(1).max(150),

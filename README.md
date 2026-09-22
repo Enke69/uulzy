@@ -33,11 +33,14 @@ DATABASE_URL="<direct url>" npm run db:seed
 
 ### Demo accounts
 
-| Role  | Email               | Password    |
-|-------|---------------------|-------------|
-| Admin | `admin@uulzy.mn`    | `Admin123!` |
-| User  | `bataa@example.com` | `demo1234`  |
-| User  | `sarnai@example.com`| `demo1234`  |
+The seed creates `admin@uulzy.mn` plus a few demo users. **Passwords are never
+committed** — this repo is public, and a published password is an open admin
+account on a live database. The seed prints freshly generated passwords once,
+when it runs; copy them then. To choose your own instead:
+
+```bash
+SEED_ADMIN_PASSWORD="..." SEED_DEMO_PASSWORD="..." npm run db:seed
+```
 
 Log in as the admin to see `/admin`, the approval queue for suggested places and submitted prices.
 
@@ -63,7 +66,11 @@ Log in as the admin to see `/admin`, the approval queue for suggested places and
 
 ### Media uploads
 
-`POST /api/uploads` stores a file under `public/uploads` and returns its path. The stored extension comes from the MIME map, never the client-supplied filename, and names are random, so a renamed file cannot choose its own extension or overwrite another. Anything referencing an upload accepts only a `/uploads/<name>` path, so external URLs and path traversal are rejected. To move to object storage (Supabase Storage, UploadThing, S3), swap the `writeFile` call in that one route — callers only depend on the returned `url`.
+`POST /api/uploads` stores a file in **Neon Object Storage** (S3-compatible) and returns its public URL. Nothing is written to local disk, so uploads survive redeploys.
+
+The stored extension comes from the MIME map, never the client-supplied filename, and keys are random — a renamed file cannot choose its own extension or overwrite another. Anything referencing an upload is validated against the bucket's own public base URL, so external URLs and path traversal are rejected. Deleting a post also deletes the object: the bucket is `public_read`, so a surviving file would stay reachable by URL after the post was removed.
+
+Requires the `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, and `AWS_REGION` variables Neon injects (`neon link` / `neon deploy` pull them into `.env`). Without them the route returns 503 rather than failing silently. The bucket name defaults to `uulzy`, overridable with `STORAGE_BUCKET`.
 
 Limits: images 8MB (JPG, PNG, WebP, GIF), videos 50MB (MP4, WebM, MOV).
 
@@ -94,8 +101,11 @@ Facts are moderated, opinions are not. Suggested **places** and submitted **pric
 ## Deploying
 
 1. **Create a Postgres database** (Neon or Supabase) and note the connection string.
-2. **Set environment variables** on your host:
+2. **Set environment variables** on your host — copy the values from your local
+   `.env`, which `neon link` populated:
    - `DATABASE_URL` — the pooled Postgres URL.
+   - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`,
+     `AWS_REGION` — object storage, for uploads.
    - `SESSION_SECRET` — a long random value. Generate with
      `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`.
      Without it, auth falls back to a hardcoded dev value that anyone reading
@@ -107,10 +117,9 @@ Facts are moderated, opinions are not. Suggested **places** and submitted **pric
    hosts block dependency install scripts, so this is what keeps Prisma Client
    present at build time.
 
-Still required before the deployment is genuinely usable: **uploads must move to
-object storage**. They currently write to `public/uploads` on local disk, which a
-serverless host discards on every redeploy. See *Media uploads* above — it is a
-single swap in `src/app/api/uploads/route.ts`.
+`vercel.json` pins the deployment to `sin1` (Singapore) so the app runs next to
+the database — each page makes several round trips, so that distance matters
+more than the distance from your users to either.
 
 ## Before launching publicly
 
@@ -119,5 +128,5 @@ single swap in `src/app/api/uploads/route.ts`.
 - Add report/block and phone verification before letting strangers meet through Meetups.
 - Replace the seeded price estimates **and coordinates** with verified data; both are approximations for demo purposes.
 - **Moderate activity media.** Photos and videos publish immediately today (the uploader or an admin can delete). User-submitted media is an abuse vector, so add reporting and a review queue before opening signups.
-- Move uploads to object storage and replace the OSRM demo server, as described above. Local disk does not survive a redeploy on most hosts.
-- Rotate or remove the demo accounts below — their passwords are public in this repo.
+- Replace the OSRM demo server, as described above — it is not licensed for production traffic.
+- Delete the demo accounts entirely before real signups — they exist to demo the app, not to be real logins.
